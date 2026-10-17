@@ -1,5 +1,7 @@
 # Roadmap
 
+> 2026年5月の初期の計画メモです。Phase の区切りは README の「ロードマップ」を正とします。
+
 ## Phase 1 — 補助金申請ドラフトの一気通貫生成（現在）
 
 **ゴール：** 公募要領＋ヒアリング → 申請書Wordドラフト、をエージェント連携で出す。
@@ -12,7 +14,7 @@
   - `agents/expense_calc.py` — 経費計算と区分照合
   - `agents/story_builder.py` — 事業ストーリーをLLMで構築
   - `agents/fact_checker.py` — Perplexity連携で統計データ検証
-  - `agents/document_builder.py` — python-docxでWord組立
+  - `tools/document_assembler.py`・`tools/official_form_filler.py` — Word の組立と公式様式への記入（旧 `agents/document_builder.py`）
   - `agents/quality_check.py` — 採択パターン照合と自己採点
   - `agents/orchestrator.py` — Step依存関係とリトライ制御
 - 加点判定（`tools/bonus_points.py`）
