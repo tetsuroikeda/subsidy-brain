@@ -2,11 +2,24 @@
 
 **事業計画を作って終わりにしない。補助金申請 → 資金調達計画 → 予算実績管理 → 常に自己改善するCFOエージェントまで、AI が連続して回す。**
 
-[![ci](https://github.com/ikedakeikaku/subsidy-brain/actions/workflows/demo.yml/badge.svg)](https://github.com/ikedakeikaku/subsidy-brain/actions)
+[![ci](https://github.com/tetsuroikeda/subsidy-brain/actions/workflows/demo.yml/badge.svg)](https://github.com/tetsuroikeda/subsidy-brain/actions)
 
 > Singularity Society BootCamp（第4回）応募用プロトタイプ。
 
+> **状態** — 2026年5月時点のプロトタイプです。2026年5月24日以降は更新していません。以下の「いま」「進行中」などは、2026年5月時点の内容です。
+
 > **本リポジトリについて** — これは、私が実際の補助金申請業務で使用しているツールを、公開用に再構成したものです。守秘義務に基づき、各事業者の固有情報・実際の採択事例・業務で蓄積したナレッジはすべて除去し、サンプルは架空の事業者データ（`demo/sample_company.yaml`）に差し替えています。
+
+## English summary
+
+subsidy-brain is a prototype (May 2026) that drafts a Japanese SME grant application from a single line: the name of the grant. It looks up the call guidelines, structures them, drafts each section with Claude, fills the official Word/Excel form while keeping its structure and formatting, then self-scores the draft and rewrites the weakest sections.
+
+- Runs on fictional company data (`demo/sample_company.yaml`). No client data is included.
+- `uv run pytest -ra` runs 23 tests. CI runs lint, the tests and an offline demo.
+- Without an API key, the demo runs end to end with a deterministic mock. `--live` uses Claude and web search and needs `ANTHROPIC_API_KEY`.
+- The self-score is a heuristic on six axes (such as use of company-specific data and character-count compliance). It does not predict whether an application will be selected.
+- Not updated since May 24, 2026.
+- Author: Tetsuro Ikeda, certified SME management consultant (Chusho Kigyo Shindanshi), Ikeda Keikaku LLC. The rest of this README is in Japanese.
 
 ---
 
@@ -62,7 +75,7 @@ A → B → C の順で取りに行くのは、**作る部品が次の Phase で
 補助金の名前を1行渡せば、申請書ドラフトが `.docx` で出る。
 
 ```bash
-git clone https://github.com/ikedakeikaku/subsidy-brain && cd subsidy-brain
+git clone https://github.com/tetsuroikeda/subsidy-brain && cd subsidy-brain
 uv sync --extra dev
 uv run pytest -ra                                              # 23 tests
 uv run python demo/run_natural_demo.py "持続化補助金 第19回"
@@ -74,21 +87,23 @@ ANTHROPIC_API_KEY=sk-ant-... \
 ### ✅ もう動いている部分
 
 - **自然言語からの end-to-end**：補助金名 → 公募要領Web取得 → 構造化 → 事業者プロファイル合成 → Claude で本文生成 → 公式様式に流し込み → 自己採点 → 弱点書き直し → 再採点 までを1コマンドで完走
-- **公式 Word / Excel 様式を壊さずに埋める**：参考様式 docx で 176 段落・28 テーブルがバイト同一で残る／xlsx は drawings・名前付き範囲・条件付き書式が無傷（[Appendix A](#appendix-a-公式参考様式-セル内挿入-実装ログ)）
-- **自己改善ループの基礎動作**：採点 → 弱点セクション特定 → 書き直し → 再採点 を回し、ローカル JSONL に履歴を蓄積（フィードバックでスコアが ±0.10 動く挙動を test で検証）
+- **公式 Word / Excel 様式を壊さずに埋める**：参考様式 docx で 176 段落・28 テーブルがバイト同一で残る／xlsx は drawings・名前付き範囲・条件付き書式が無傷（[Appendix A](#appendix-a-公式参考様式-セル内挿入-実装ログ)。測った様式 docx はリポに含まれず、下の手順だけでは再現できない。xlsx の自動テストは 2026-05-22 に外した）
+- **自己改善ループの基礎動作**：採点 → 弱点セクション特定 → 書き直し → 再採点 を回し、ローカル JSONL に履歴を蓄積（フィードバックでスコアが ±0.10 動く挙動は、2026-05-22 まで test で確かめていた。このテストは現在のリポにない）
 - **再現可能なテスト**：23 tests passing。3 種類の異なる補助金で異なる program_id が合成されることを検証
 
-公開リポに含まれる架空事業者データ（`demo/sample_company.yaml`）での実測値：
+公開リポに含まれる架空事業者データ（`demo/sample_company.yaml`）での実測値です。2026年5月の記録は測った条件が残っていないため、上のコマンドで再現できるのは右の列です。
 
-| | **持続化補助金 第19回 通常枠** |
-|---|---|
-| 経路 | document_assembler（公式 docx なし／電子申請のみ） |
-| セクション | 11 |
-| 文字数 | 8,896 / 7,220（82% compliance） |
-| 採択スコア | 76 / 100（target 85 まで残り 9 点） |
-| docx | 60 KB |
+| | 2026年5月の記録 | オフラインのモック（上のコマンド、2026-10-17 に再実行） |
+|---|---|---|
+| 対象 | 持続化補助金 第19回 通常枠 | 持続化補助金 第19回（Web 調査なしのフォールバック構造） |
+| 経路 | document_assembler（公式 docx なし／電子申請のみ） | document_assembler（DRAFT のひな形） |
+| セクション | 11 | 14 |
+| 文字数（実際 / 目標） | 8,896 / 7,220 | 4,718 / 10,326 |
+| 字数が範囲内の節の割合 | 82% | 36% |
+| 自己採点 | 76 / 100（目標 85 まで残り 9 点） | 84 / 100（未達。書き直し4回で 79→84） |
+| docx | 60 KB | 87.7 KB |
 
-### ⏳ いま伸ばしているところ
+### ⏳ 2026年5月時点の課題
 
 76 → 85 の **9 点**を埋めるのは、本文品質の 2 軸：
 - **文字数充足率** を 82% → 95% 以上に
@@ -146,10 +161,10 @@ ANTHROPIC_API_KEY=sk-ant-... \
 
 ## 作り手
 
-池田哲郎（池田計画合同会社）。**元銀行員**。
+池田哲郎（池田計画合同会社 代表社員・中小企業診断士）。**元銀行員**。
 現在は中小企業の財務支援を本業にしている。日常的に受ける依頼は3種類：
 
-- **補助金申請**（持続化補助金・省力化投資補助金 など、資金調達・財務支援の中で **これまで 50 件以上を支援**）
+- **補助金の申請支援**（持続化補助金・省力化投資補助金 など。採択実績は **5制度で31社中27社、総支援額4.3億円超**〈2026年10月時点・自社集計〉）
 - **資金調達のための事業計画作成**（融資申込書類・事業承継計画・経営力向上計画 など）
 - **財務計画作成**（中期P/L・資金繰り表・KPI ダッシュボード）
 
@@ -231,7 +246,7 @@ Word でも Excel でも、公募元が配布する**様式ファイル**は罫�
   （参考様式 docx 一式で 176 段落 / 28 テーブルが保持されることを実測）
 - **Excel**：`.xlsx` を ZIP として開き、`sharedStrings.xml` と
   `sheet*.xml` のテキスト部分**だけ**を置き換える。
-  グラフ・条件付き書式・名前付き範囲がバイト同一で残る（テストで検証）
+  グラフ・条件付き書式・名前付き範囲がバイト同一で残る（2026-05 に確認。自動テストは 2026-05-22 に外した）
 
 公式ファイルが取れない補助金（電子申請のみ等）は、`DRAFT` と明示した
 仮のスケルトンを生成する。**「公式」と「DRAFT」を混同しない**ことだけは厳守。
@@ -263,7 +278,7 @@ Phase 3 で freee／Drive／Gmail／LINE のデータを取り込む段になっ
 ## ロードマップ
 
 A（補助金申請）→ B（資金調達計画作成）→ C（予算実績管理）の順で取りに行く。
-**Phase 1 はまだ進行中**で、いまここに集中している。
+2026年5月時点では **Phase 1 が進行中**で、ここに集中していた。
 
 ### Phase 1: 補助金申請の手間ゼロ化（進行中）
 
@@ -277,7 +292,7 @@ A（補助金申請）→ B（資金調達計画作成）→ C（予算実績管
 | **③ 事後報告**（交付申請・実績報告・経費精算） | 着手前 | 領収書 OCR、エビデンスと申請内容の突合、報告書フォーマット生成 |
 
 **仕上げ基準**：①②③が連続して動き、複数の異なる業種で
-**人手の追加修正なしに採択スコア 85/100 以上を再現できる**こと。
+**人手の追加修正なしに自己採点 85/100 以上を再現できる**こと。
 現状はこの基準からまだ離れている。
 
 ### Phase 2: 資金調達計画作成の自動化（次に着手）
@@ -407,7 +422,7 @@ AFTER:  66/100  (passed=True)
 | `knowledge/*.json` | 業種別・補助金別の自由形式ナレッジ（AdoptionResearcher 書き込み） | 上書き |
 
 採択フィードバックが入るたび該当 skill のスコアが上がり、次回の検索で優先される
-（`test_skill_store_learns_from_feedback` で 0.60→0.70→0.60 の上下動作が検証済み）。
+（0.60→0.70→0.60 の上下動作は、2026-05-22 まで `test_skill_store_learns_from_feedback` で確かめていた。このテストは現在のリポにない）。
 
 ---
 
@@ -428,7 +443,7 @@ subsidy-brain/
 │   ├── story_builder.py           # #8 ストーリー構築（Claude）
 │   ├── fact_checker.py            # #12 統計データ裏付け検証
 │   ├── quality_check.py           # #14 採択パターン照合・自己採点
-│   └── document_builder.py        # #13 公式テンプレ流し込み or 組立
+│   └── bonus_evaluator.py         # 加点項目の適用判定
 ├── tools/
 │   ├── web_search.py              # Anthropic優先 / Perplexity fallback の統一層
 │   ├── claude_client.py           # Claude API（prompt caching・tool_use・usage tracking）
@@ -439,9 +454,9 @@ subsidy-brain/
 │   ├── template_filler.py         # {{placeholder}}置換式（合成テンプレ向け）
 │   ├── xlsx_filler.py             # フォーマット保持xlsx充填
 │   ├── refinement_loop.py         # 自己改善ループ
-│   ├── adoption_estimator.py      # 6軸採択確率推定
+│   ├── adoption_estimator.py      # 6軸の自己採点（採択の予測ではない）
 │   ├── length_validator.py        # min/target/max compliance
-│   ├── quality_scoring.py         # 補助的4軸スコア
+│   ├── docx_structure_reader.py   # 様式 docx の見出し構造を読む
 │   ├── cost_tracker.py            # Claude使用token/料金集計
 │   ├── observability.py           # structlogベース構造化ログ
 │   ├── chart_tools.py             # matplotlib図表生成
@@ -547,20 +562,18 @@ tests/test_operations.py ....                                            [100%]
 ### 補助検証スクリプト
 
 - **`demo/verify_output.py`** — 生成 docx を走査し、各 leaf 見出しの本文がセル**内**に
-  配置されているかを確認。参考様式 docx で **全 leaf**（実測例：15/15）が正しく配置されていることを実測。
-- **`test_xlsx_filler_does_not_touch_non_text_parts`** — `xlsx_filler` 通過後、
-  drawings / conditional formatting / defined names がバイト同一であることを zip 比較で検証。
-- **`test_skill_store_learns_from_feedback`** — 採択フィードバックでスコアが
-  0.60 → 0.70 → 0.60 と上下することを確認（過剰学習の防止）。
+  配置されているかを確認。参考様式 docx で **全 leaf**（実測例：15/15）が正しく配置されていることを実測（測った docx はリポに含まれない）。
+- `test_xlsx_filler_does_not_touch_non_text_parts` と `test_skill_store_learns_from_feedback` は、
+  2026-05-22 の整理（c1f1a80）で外した。現在の 23 本には含まれない。
 
 ---
 
 ## 開発体制とライセンス
 
 - **開発**：池田計画合同会社・池田哲郎。Claude Code とのステップバイステップ協働
-- **BootCamp 期間中の到達目標**：**Phase 3 まで一気通貫で動かす**。
+- **BootCamp 期間中の到達目標**（2026年5月時点）：**Phase 3 まで一気通貫で動かす**。
   - **Phase 1**：本文品質を adoption_estimator 85/100 に到達させ、複数業種での再現性を確認
   - **Phase 2**：資金調達計画作成・資金繰り予測の自動化（freee 連携での月次資金繰り予測）
   - **Phase 3**：会社情報・経理・KPI を取り込み続け、月次で予算と実績を突き合わせ、打ち手を提案し、翌月に自分の提案的中率を採点して次に活かす **CFO エージェントの自己改善ループ** を実運用に乗せる
-- **ライセンス**：MIT
+- **ライセンス**：MIT（[LICENSE](LICENSE)）
 - **連絡先**：plan@ikedakeikaku.jp
