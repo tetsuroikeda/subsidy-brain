@@ -366,7 +366,7 @@ async def run(query: str, *, live: bool, use_cache: bool) -> None:
           f"{', '.join(assemble_result['tables_inserted']) or '—'}")
     print(f"   fill method        : {assemble_result.get('fill_method', '—')}")
     print(f"   template source    : {assemble_result.get('template_source', '—')}")
-    print(f"   adoption probability: {final_estimate['total']}/100 "
+    print(f"   self-score         : {final_estimate['total']}/100 "
           f"({'達成' if final_estimate['passed'] else '未達'})")
     if refinement["iterations"]:
         print(f"   refinement         : "

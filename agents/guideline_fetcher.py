@@ -29,7 +29,7 @@ from schemas.subsidy_registry import SubsidyProgram, SubsidyRegistry
 logger = logging.getLogger(__name__)
 
 _CACHE_ROOT = Path(".cache/guidelines")
-_USER_AGENT = "subsidy-brain/0.1 (+https://github.com/ikedakeikaku/subsidy-brain)"
+_USER_AGENT = "subsidy-brain/0.1 (+https://github.com/tetsuroikeda/subsidy-brain)"
 
 
 # Signatures of real binary file types (first few bytes)
