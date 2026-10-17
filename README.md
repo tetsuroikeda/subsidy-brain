@@ -1,579 +1,123 @@
 # subsidy-brain
 
-**事業計画を作って終わりにしない。補助金申請 → 資金調達計画 → 予算実績管理 → 常に自己改善するCFOエージェントまで、AI が連続して回す。**
-
 [![ci](https://github.com/tetsuroikeda/subsidy-brain/actions/workflows/demo.yml/badge.svg)](https://github.com/tetsuroikeda/subsidy-brain/actions)
 
-> Singularity Society BootCamp（第4回）応募用プロトタイプ。
+**補助金の名前を1行渡すと、公募要領に沿った申請書の下書き（Word）を作るプロトタイプです。**
 
-> **状態** — 2026年5月時点のプロトタイプです。2026年5月24日以降は更新していません。以下の「いま」「進行中」などは、2026年5月時点の内容です。
-
-> **本リポジトリについて** — これは、私が実際の補助金申請業務で使用しているツールを、公開用に再構成したものです。守秘義務に基づき、各事業者の固有情報・実際の採択事例・業務で蓄積したナレッジはすべて除去し、サンプルは架空の事業者データ（`demo/sample_company.yaml`）に差し替えています。
-
-## English summary
-
-subsidy-brain is a prototype (May 2026) that drafts a Japanese SME grant application from a single line: the name of the grant. It looks up the call guidelines, structures them, drafts each section with Claude, fills the official Word/Excel form while keeping its structure and formatting, then self-scores the draft and rewrites the weakest sections.
-
-- Runs on fictional company data (`demo/sample_company.yaml`). No client data is included.
-- `uv run pytest -ra` runs 23 tests. CI runs lint, the tests and an offline demo.
-- Without an API key, the demo runs end to end with a deterministic mock. `--live` uses Claude and web search and needs `ANTHROPIC_API_KEY`.
-- The self-score is a heuristic on six axes (such as use of company-specific data and character-count compliance). It does not predict whether an application will be selected.
-- Not updated since May 24, 2026.
-- Author: Tetsuro Ikeda, certified SME management consultant (Chusho Kigyo Shindanshi), Ikeda Keikaku LLC. The rest of this README is in Japanese.
+> 2026年5月に作った試作品で、それ以降は更新していません。同梱のサンプルは、すべて架空の事業者データです。
 
 ---
 
-## 何を目指しているか
+## できること
 
-中小企業の現場で計画書類の作成支援をしていて、**痛みが3層に分かれている**ことが見える：
+たとえば「持続化補助金 第19回」と渡すと、1つのコマンドで次の流れを最後まで進めます。
 
-| 層 | 何が起きているか | いま誰がやっているか | 状態 |
-|---|---|---|---|
-| **A. 補助金申請** | 申請書・事前書類・事後報告。反復作業の塊 | 事業者または申請代行 | 外注で何とか回っている。ただしコストは申請額の 10〜20% |
-| **B. 資金調達計画作成** | 融資・出資のための事業計画書。属人化、毎回ゼロから書く | 事業者または財務コンサル | 「書ける人」に依頼が集中、再現性がない |
-| **C. 予算実績管理** | 計画を出した後、月次で予算と実績を比べ、乖離の理由を追い、次の打ち手を決める | **誰の手にもまともに残っていない** | **本丸**。事業者も金融機関も手が回らない |
+1. **公募要領を探す**：補助金の名前から公式サイトを Web 検索し、公募要領（PDF）と様式ファイル（Word・Excel）を取得する。
+2. **申請書の形を決める**：公募要領を読み、何節に分けるか、各節の字数の上限、必要なグラフや表、加点項目を整理する。
+3. **本文を書く**：事業者のデータ（`demo/sample_company.yaml`）をもとに、Claude が各節の本文と図表を作る。
+4. **様式に記入する**：公式の様式ファイルが手に入れば、罫線や書式を崩さずに、決められた欄へ本文を入れる。手に入らなければ「DRAFT」と明記した下書きを作る。
+5. **見直す**：6つの観点で自己採点し、目標点に届かなければ、点数の低い節から書き直して採点し直す。
 
-C が現場で一番痛い。理由はこう：
-
-- **事業者側**：計画を提出して融資を引いたが、半年後の実績が乖離。
-  その時に「なぜ乖離したか」「次の資金調達に向けてどう説明するか」を整理できる人がいない。
-  結果、次の調達タイミングで条件が悪くなる。
-- **金融機関側**：審査が終わった後のモニタリング案件が大量にある。
-  **人手不足で深く見られない**。担当者は「年に1回、決算書を見るだけ」になりがち。
-
-そして既存の SaaS がここに入れなかった理由が明確にある：
-
-> **会社ごとに予算実績管理のフォーマットが違う。**
-> 勘定科目の切り方、部門の分け方、月次レポートのレイアウト、
-> 経営者が見たい指標——全部その会社の歴史で決まっている。
-> 「うちの SaaS のフォーマットに合わせてください」と言った瞬間に、
-> 中小企業の現場では使われなくなる。
-
-→ **C は事業者と金融機関の双方が痛みを抱える二面市場**で、
-**フォーマット可変性に対応できる AI** だけが入れる領域。
-そして subsidy-brain の Phase 1 はまさにそこに本気で取り組んでいる
-（次節で詳述）。
-
-### このリポの位置付け
-
-**A から始めて、B を経由し、C に到達する**プロダクトを作っている。
-
-| Phase | 中身 | 状態 |
-|---|---|---|
-| **Phase 1 = A** | 補助金申請（事前準備＋申請書＋事後報告） | **進行中**。申請書作成は動くが精度・再現性が課題 |
-| **Phase 2 = B** | 資金調達計画作成（融資申込書・事業計画書） | 未着手。A の「決算書読込・公募要領パーサー・自己改善ループ」がそのまま再利用できる |
-| **Phase 3 = C** | 予算実績管理（月次の予算対比・乖離分析・打ち手提案） | 未着手。本丸 |
-
-A → B → C の順で取りに行くのは、**作る部品が次の Phase でそのまま再利用できる**から：
-公募要領を読む → 融資審査基準を読む。決算書を読む → 月次P/Lを読む。
-書き直して採点する → 乖離を分析して打ち手を提案する。発想は同じ。
+できあがるもの：申請書の下書き（.docx）、経費明細（.xlsx、ある場合）、実行の記録（manifest.json）。
 
 ---
 
-## いま動くもの
+## 試し方
 
-補助金の名前を1行渡せば、申請書ドラフトが `.docx` で出る。
+Python 3.11 以上と [uv](https://docs.astral.sh/uv/) が必要です。
 
 ```bash
 git clone https://github.com/tetsuroikeda/subsidy-brain && cd subsidy-brain
 uv sync --extra dev
-uv run pytest -ra                                              # 23 tests
+uv run pytest -ra                                       # テスト（23件）
 uv run python demo/run_natural_demo.py "持続化補助金 第19回"
-# Claude API キーを設定すれば --live で実モデルで実行
+```
+
+最後のコマンドで `demo/output/` に申請書の下書きができます。
+
+### 動かし方は2通り
+
+| | オフライン（API キーなし） | 実モデル（`--live`） |
+|---|---|---|
+| 公募要領の取得 | しない（汎用の構成を使う） | Web 検索で探して取得する |
+| 本文 | あらかじめ用意した固定の文章 | Claude が書く |
+| 用途 | 流れを確かめる、テスト・CI | 実際の下書きを作る |
+| 必要なもの | なし | `ANTHROPIC_API_KEY`（費用がかかる） |
+
+```bash
 ANTHROPIC_API_KEY=sk-ant-... \
   uv run python demo/run_natural_demo.py --live "持続化補助金 第19回"
 ```
 
-### ✅ もう動いている部分
+オフラインで実行した例（2026-10-17）：14節、4,718字（目標 10,326字）、自己採点 84/100（目標 85 に未達。書き直し4回で 79→84）、docx 約88KB。
 
-- **自然言語からの end-to-end**：補助金名 → 公募要領Web取得 → 構造化 → 事業者プロファイル合成 → Claude で本文生成 → 公式様式に流し込み → 自己採点 → 弱点書き直し → 再採点 までを1コマンドで完走
-- **公式 Word / Excel 様式を壊さずに埋める**：参考様式 docx で 176 段落・28 テーブルがバイト同一で残る／xlsx は drawings・名前付き範囲・条件付き書式が無傷（[Appendix A](#appendix-a-公式参考様式-セル内挿入-実装ログ)。測った様式 docx はリポに含まれず、下の手順だけでは再現できない。xlsx の自動テストは 2026-05-22 に外した）
-- **自己改善ループの基礎動作**：採点 → 弱点セクション特定 → 書き直し → 再採点 を回し、ローカル JSONL に履歴を蓄積（フィードバックでスコアが ±0.10 動く挙動は、2026-05-22 まで test で確かめていた。このテストは現在のリポにない）
-- **再現可能なテスト**：23 tests passing。3 種類の異なる補助金で異なる program_id が合成されることを検証
+---
 
-公開リポに含まれる架空事業者データ（`demo/sample_company.yaml`）での実測値です。2026年5月の記録は測った条件が残っていないため、上のコマンドで再現できるのは右の列です。
+## 仕組み
 
-| | 2026年5月の記録 | オフラインのモック（上のコマンド、2026-10-17 に再実行） |
+| 段階 | すること | 主なファイル |
 |---|---|---|
-| 対象 | 持続化補助金 第19回 通常枠 | 持続化補助金 第19回（Web 調査なしのフォールバック構造） |
-| 経路 | document_assembler（公式 docx なし／電子申請のみ） | document_assembler（DRAFT のひな形） |
-| セクション | 11 | 14 |
-| 文字数（実際 / 目標） | 8,896 / 7,220 | 4,718 / 10,326 |
-| 字数が範囲内の節の割合 | 82% | 36% |
-| 自己採点 | 76 / 100（目標 85 まで残り 9 点） | 84 / 100（未達。書き直し4回で 79→84） |
-| docx | 60 KB | 87.7 KB |
+| 探す | 補助金名から公式サイトと様式ファイルを探し、取得して保存する | `agents/subsidy_discoverer.py`、`agents/guideline_fetcher.py` |
+| 読む | 公募要領から、節の構成・字数・図表・加点項目を取り出す | `agents/profile_synthesizer.py` |
+| 書く | 事業者データと公募要領から本文を作り、様式に記入する | `agents/story_builder.py`、`tools/official_form_filler.py`、`tools/xlsx_filler.py` |
+| 直す | 自己採点し、弱い節を書き直す | `tools/adoption_estimator.py`、`tools/refinement_loop.py` |
 
-### ⏳ 2026年5月時点の課題
+### 設計で気をつけたこと
 
-76 → 85 の **9 点**を埋めるのは、本文品質の 2 軸：
-- **文字数充足率** を 82% → 95% 以上に
-- **自社固有データの織り込み**（採点 100 点中 25 点の重み）を厚くする
+- **補助金ごとのデータを持たない**：字数や必須の節を手で書いたデータは持たず、毎回その場で公募要領を読む。公募要領にない数字を推測で埋めないためです。
+- **公式様式を壊さない**：Word は見出しを目印に、決められた欄だけに本文を入れる。Excel はファイルの中の文字の部分だけを書き換え、グラフや書式、名前付きの範囲はそのまま残す。
+- **「公式」と「DRAFT」を混同しない**：公式の様式が手に入らないときは、DRAFT と明記した下書きにする。
+- **決まった形で受け取る**：Claude からはスキーマに沿った JSON で受け取り（tool use）、Pydantic で型を確かめる。
+- **記録はファイルで残す**：実行の記録や採点の履歴は、ローカルの JSONL ファイルに残す。データベースは使わない。
 
-### 中で何が起きているか
+### 自己採点について
 
-1コマンドで動くが、内部では4ステップを順に走らせている。
-事前に「この補助金はこういう構造です」というデータは一切持っていない。
-**毎回その場で公募要領を読みに行く**：
+次の6つの観点で、0〜100点の目安を出します。採択されるかどうかの予測ではありません。
 
-| | 何をするか | 使う識別子 |
-|---|---|---|
-| **1. 探す** | 補助金名から、公式サイトの URL と様式ファイル（PDF / Word / Excel）を見つけて DL する | `SubsidyDiscoverer` `GuidelineFetcher` |
-| **2. 読む** | DL した公募要領 PDF を読み、「セクションは何個」「各セクション何字以内」「どんなグラフ／表が必要」「加点項目は何」を構造化する | `ProfileSynthesizer` |
-| **3. 書く** | 事業者のプロファイル＋公募要領＋類似案件の採択事例を Claude に渡し、各セクションの文章と図表を生成。公式 Word/Excel に流し込む | `StoryBuilder` `OfficialFormFiller` `xlsx_filler` |
-| **4. 直す** | 仕上がりを 6 軸で採点。目標スコアに届かなければ、弱い順にセクションを書き直して再採点 | `adoption_estimator` `refinement_loop` |
-
-採点結果と書き直しの履歴はローカルに溜まり、次回以降の判断材料になる
-（`skill_store`）。
+自社固有のデータが入っているか／課題と施策が対応しているか／加点項目を使っているか／具体的な数字があるか／字数が範囲に収まっているか／図表がそろっているか
 
 ---
 
-## なぜ「補助金申請」から始めるのか
+## できないこと・注意
 
-本丸（C: 予算実績管理）にいきなり手をつけない理由はシンプルで、
-**A→B→C の順でしか部品が育たない**から。
-そして A（補助金申請）から始める理由は4つ：
-
-1. **依頼が現に来ている**。補助金は中小企業がいま一番使っているお金の制度で、
-   毎週のように相談が来る。市場性は確認済み。
-2. **作業が単純な繰り返し**。公募要領を読む → 必要書類を集める → 表に転記する
-   → 同じ言い回しで何回も書く → 数字の整合をチェック → 採択後の報告書を作る。
-   **事前準備から事後報告まで、申請業務の 8 割は反復作業**。
-3. **どこまで自動化できれば「終わり」か明確**。①事前準備→②申請書作成→③事後報告までを、
-   人手の追加修正なしに、複数の業種で同じレベルの出力ができれば Phase 1 完了。
-   **計測可能**。
-4. **作る部品が B / C に直接つながる**。決算書読込・公募要領パーサー・
-   過去事例の蓄積・書き直して採点するループ——どれも Phase 2 の融資計画作成と
-   Phase 3 の予算実績管理でそのまま使う。Phase 1 を仕上げる過程が、
-   そのまま本丸の準備になる。
-
-### 補助金そのものへの姿勢
-
-補助金制度に ばらまき の側面があるのは事実。申請数を増やすこと自体を
-「社会的に良いこと」とは思っていない。だから Phase 1 のゴールは
-「申請数の最大化」ではなく**「反復作業を消す」**こと。
-
-ただし、現状すでに**年間数千億円**が補助金として動いていて、しかも
-事業者の手元には**作業の重さだけが残っている**。そこを片付ければ、
-事業者は資金調達計画と予算実績管理という、**本来時間を使うべき領域**に
-人手を戻せる。Phase 1 はそのための入口。
+- 出てくるのは**下書き**です。内容と数字は、提出前に必ず人が確認してください。
+- 公募要領や様式の取得は Web 検索に頼っているので、補助金によっては見つからないことがあります。
+- 既定のモデル名など、設定は2026年5月時点のものです。
 
 ---
 
-## 作り手
-
-池田哲郎（池田計画合同会社 代表社員・中小企業診断士）。**元銀行員**。
-現在は中小企業の財務支援を本業にしている。日常的に受ける依頼は3種類：
-
-- **補助金の申請支援**（持続化補助金・省力化投資補助金 など。採択実績は **5制度で31社中27社、総支援額4.3億円超**〈2026年10月時点・自社集計〉）
-- **資金調達のための事業計画作成**（融資申込書類・事業承継計画・経営力向上計画 など）
-- **財務計画作成**（中期P/L・資金繰り表・KPI ダッシュボード）
-
-この中で、財務計画を**作るところ**までは何とか手が回るが、
-その後の**予算実績管理**（月次の予算対比と乖離分析）が手薄になりがち。
-金融機関側も同じ理由で、モニタリング案件まで深く見られていない。
-**そこに本当の痛みがある**と内側から確信したのが、このリポを書き始めた動機。
-
-エンジニア視点だけでは「中小企業データの汚さ」が見えず、財務現場の視点
-だけでは「AI-native アーキテクチャ」に到達しない。この交点で、
-**補助金申請を入口に、計画作成と実績管理まで連続して回す**方向に作っている。
-
-このリポは Claude Code とのステップバイステップ協働で、実案件で日常使用
-しているツールを公開用に再構成したもの。守秘義務上の固有情報は除去済み。
-
----
-
-## 設計の要点
-
-```
-[ユーザー入力]  補助金の名前（自然言語）＋事業者プロファイル（YAML）
-       │
-       ▼
-SubsidyDiscoverer  ── Anthropic web_search →  公式URL・様式URL
-       │
-       ▼
-ProfileSynthesizer ── 公募要領を読む    →  SubsidyProfile（合成）
-       │                                       ↓
-       ▼                                  profile_cache
-GuidelineFetcher   ── 公式PDF/docx DL  →  fetched_form_paths
-       │
-       ▼
-AdoptionResearcher ── 採択事例調査     →  skill_store.knowledge
-       │
-       ▼
-StoryBuilder (Claude tool_use)        →  ApplicationStory
-       │
-       ▼
-adoption_estimator ── 6軸採点          →  score
-       │
-       ▼   未達なら ↓
-refinement_loop    ── 弱点セクション再生成 → loop
-       │
-       ▼   達成
-       │
-       ▼
-[公式docxが取れた場合] OfficialFormFiller — 見出しマッチで本文挿入
-[取れない場合]         document_assembler — profile から組み立て
-       │
-       ▼
-[出力]  申請書.docx ＋ 経費明細.xlsx（任意）＋ manifest.json
-       │
-       ▼
-   ExecutionLog → skill_store（フィードバックで版管理スコア更新）
-```
-
-### ① 事前データを持たない
-
-`presets/` も `templates/` も**空**。
-「この補助金は何字以内」「必須セクションはこれ」というデータは1行も持っていない。
-
-理由：以前は持っていた（`presets/jizoku_19_profile.yaml` 等）が、
-公募要領に明記の無い数字を推定で埋めることになり、「システムが補助金を
-知っている」ように見えてしまった。**実際は知らない**——だから持たない。
-
-代わりに、補助金名を渡されたら毎回その場で公募要領を読みに行く。
-財務支援の現場で新しい補助金に当たるときと同じ動きを、エージェント側でやる。
-
-### ② 公式の Word/Excel ファイルを壊さずに埋める
-
-Word でも Excel でも、公募元が配布する**様式ファイル**は罫線・フォント・
-ヘッダ番号・defined names など、見た目に関わる情報が大量に埋め込まれている。
-これを 1 から組み立て直すと、必ずどこかが崩れる。
-
-だから、**公式の `.docx` / `.xlsx` を開いて、中身のテキストだけを置換する**：
-
-- **Word**：見出しを目印に、その下のセル／段落に本文を流し込む。
-  公式様式の段落・テーブルはバイト単位でそのまま残る
-  （参考様式 docx 一式で 176 段落 / 28 テーブルが保持されることを実測）
-- **Excel**：`.xlsx` を ZIP として開き、`sharedStrings.xml` と
-  `sheet*.xml` のテキスト部分**だけ**を置き換える。
-  グラフ・条件付き書式・名前付き範囲がバイト同一で残る（2026-05 に確認。自動テストは 2026-05-22 に外した）
-
-公式ファイルが取れない補助金（電子申請のみ等）は、`DRAFT` と明示した
-仮のスケルトンを生成する。**「公式」と「DRAFT」を混同しない**ことだけは厳守。
-
-### ③ Claude を「対等な一級クライアント」として扱う
-
-公募要領の不変条件（経費区分・審査基準・文字数）は Pydantic で型化してあり、
-**人間のコードも Claude も同じ API を呼ぶ**。Claude が特別扱いされていない。
-
-Claude 連携は 2026 年時点のベストプラクティスに揃えた：
-
-- `tool_use` で必ずスキーマ準拠 JSON を受け取る（自由文を後でパースしない）
-- `cache_control: ephemeral` で長いプロンプトを **90% コスト削減**
-- Built-in `web_search_20250305` を第一経路、Perplexity は fallback
-- API key 無しでも `import` だけは通る（lazy init）
-
-### ④ ローカルファイルを正本にする（DB を立てない）
-
-採択事例・実行ログ・スコア更新は、すべてローカルの JSONL ファイルに溜める。
-**人間がエディタで開いて読める**。テキストエディタで grep できる。Git に diff が出る。
-Phase 3 で freee／Drive／Gmail／LINE のデータを取り込む段になっても、
-正本はローカルの JSON のまま——専用 DB を立てない。
-
-中小企業の現場では、DB を建てた時点で運用負荷が跳ねる。
-**ファイルで足りるものはファイルで持つ**を初期方針として一貫させている。
-
----
-
-## ロードマップ
-
-A（補助金申請）→ B（資金調達計画作成）→ C（予算実績管理）の順で取りに行く。
-2026年5月時点では **Phase 1 が進行中**で、ここに集中していた。
-
-### Phase 1: 補助金申請の手間ゼロ化（進行中）
-
-ゴール：**どの中小企業が使っても、同じレベルの申請書と報告書が出る**。
-属人化しない、再現性のある出力。
-
-| 局面 | 状態 | 残っている課題 |
-|---|---|---|
-| **① 事前準備**（必要書類の特定・命名ルールに従ったファイル整備・決算書からの数字抽出） | 着手前 | 公募要領から必要書類リストを自動抽出、命名規則の生成、決算書からの該当年度抽出を実装 |
-| **② 申請書作成**（経営計画・補助事業計画・経費明細・図表） | 動く（採点 76/100、未達） | **本文品質**を引き上げる：文字数充足率（いま 82%）と自社固有データの織り込み（採点の25点軸）。複数事業者で再現性を検証 |
-| **③ 事後報告**（交付申請・実績報告・経費精算） | 着手前 | 領収書 OCR、エビデンスと申請内容の突合、報告書フォーマット生成 |
-
-**仕上げ基準**：①②③が連続して動き、複数の異なる業種で
-**人手の追加修正なしに自己採点 85/100 以上を再現できる**こと。
-現状はこの基準からまだ離れている。
-
-### Phase 2: 資金調達計画作成の自動化（次に着手）
-
-事業者は補助金以外にも、**融資の事業計画・出資の事業計画・
-事業承継計画・経営力向上計画**など、用途別に同じような計画書を毎回ゼロから書いている。
-書ける人に依頼が集中して、再現性がない。
-
-| 出力 | 入力 | 流用する Phase 1 部品 |
-|---|---|---|
-| 融資申込書類（金融機関向け事業計画） | 決算書 + 経営者ヒアリング + 業界動向 | 決算書読込、公募要領パーサー → 融資審査基準パーサーに転用 |
-| 事業承継計画 | 同上 + 後継者プロファイル | 過去事例蓄積、書き直しループ |
-| 経営力向上計画（中小企業等経営強化法） | 同上 | 公募要領パーサー、構造化された計画フォーマット出力 |
-
-Phase 2 が動き出すと、池田さん自身が日常的に受けている**資金調達計画作成依頼**
-の自動化が始まる。市場性は確認済み。
-
-### Phase 3: 予算実績管理の自動化（本丸）
-
-事業者と金融機関の双方が手を回せていない領域。
-計画を出して終わりにせず、**月次で予算と実績を突き合わせ、乖離の理由を整理し、
-次の打ち手を提案する**ところまでをエージェントが回す。
-
-| 受益者 | 何が変わるか |
-|---|---|
-| **事業者** | 半年後の決算が乖離した時、説明と打ち手が手元にある。次の資金調達で条件が悪化しない |
-| **金融機関** | モニタリング対象企業に対し、AI が月次レポートを生成。担当者は**異常値が出た案件だけ深く見る**運用に転換できる（人手不足の解消） |
-
-ここが**二面市場**になる。事業者向けには SaaS、金融機関向けには
-モニタリング自動化として、同じプロダクトの別の顔として展開できる可能性がある。
-ただし「金融機関がいくら払うか」「コンプライアンス要件はどうか」は
-まだ検証していない。Phase 1/2 を仕上げる過程でヒアリングする。
-
-#### Phase 3 の技術的勝ち筋：フォーマット可変性
-
-予算実績管理を既存 SaaS が取れなかった理由は**会社ごとに
-フォーマットが違うから**。これは Phase 1 で **subsidy-brain がすでに
-本気で取り組んだ問題と同じ性質**：
-
-- 補助金ごとに様式 docx の構造が違う／勘定科目の出方も違う
-  → Phase 1 で `OfficialFormFiller` と `ProfileSynthesizer` が解決
-- 公募元が配布する Excel のレイアウトを壊さずに数字だけ埋める必要がある
-  → Phase 1 で `xlsx_filler` が zipfile 直接編集で解決
-
-**同じ技術が Phase 3 で直接効く**：
-
-- 事業者の月次試算表（freee／弥生／勘定奉行／独自 Excel）が AI に読める
-- 経営者が普段使っている月次レポートのフォーマットを**そのまま**埋める
-- 金融機関の独自モニタリングテンプレートも**そのまま**埋める
-
-「うちのフォーマットに合わせて」と言わずに済むことが、
-中小企業の現場で実際に使われる条件。ここが Phase 1 の蓄積で押し切れる。
-
-#### 最終段階：常に自己改善するCFOエージェント
-
-Phase 3 の頂点は、**会社情報・日々の経理データ・KPI を取り込み続け、毎月自分の判断を改善する CFO エージェント**：
-
-- **取り込む** — 会計（freee／弥生／勘定奉行）・銀行口座・請求書・業界 KPI・公募／融資条件を常時同期
-- **回す** — 月次で予算と実績を突き合わせ → 乖離の理由を仮説化 → 打ち手を提案 → 翌月に自分の提案的中率を採点 → 次に活かす（Phase 1 の `refinement_loop` を月次サイクルに転用）
-- **出力する** — 経営者向け月次経営レポート／金融機関向けモニタリング報告／補助金・融資活用機会レポートを、会社のフォーマットそのままに
-- **改善する** — 予測的中率・提案採用率・業績インパクトを `skill_store` 同等で記録し、判断ロジック自体が時間とともに上がる
-
-大手企業のCFOが社内で回している「月次経営会議の準備 → 議論 → 意思決定 → 振り返り」のサイクル全体を、**中小企業でも安価に**手元に置くのがゴール。**freee MCP 連携を試験中**で、Phase 2 の最小一体化はここから始める。
-
-### 部品の再利用
-
-Phase 1 で作るものは全部、Phase 2/3 でそのまま使う：
-
-| Phase 1 の部品 | Phase 2/3 での使い道 |
-|---|---|
-| 公募要領パーサー（PDF → 構造化） | 融資審査基準パーサー、各社固有の月次レポート定義の解釈 |
-| 決算書読込（OCR + 数値抽出） | 月次試算表読込（freee／弥生／勘定奉行／独自 Excel すべて対応） |
-| 過去事例蓄積（skill_store） | 業種別の財務指標、乖離パターンの蓄積 |
-| 書き直して採点するループ | 計画と実績の乖離分析、改善提案ループ |
-| **公式 docx/xlsx フォーマット保持** | **各社固有の月次レポート・金融機関の独自モニタリングテンプレートを、レイアウトを壊さずに数字だけ埋める** |
-
-Phase 2/3 の seam は `schemas/integrations.py` に Protocol として既に宣言済み：
-
-```python
-class CFOLedgerReader(Protocol):
-    async def fetch_monthly_pl(self, company_id: str, *, months: int = 24) -> list[MonthlyPL]: ...
-
-class SubsidyMatcher(Protocol):
-    async def match(self, profile: dict, *, limit: int = 10) -> list[SubsidyMatch]: ...
-
-class DataConnector(Protocol):
-    source_id: str
-    async def sync(self, *, full: bool = False) -> DataSourceMetadata: ...
-```
-
-> **Phase 1 完了の指標**：①②③のどれかに「まだ人手作業」が残っていないこと。
-> 1つでも残っていれば Phase 1 未完了。
-
-詳細：[`docs/roadmap.md`](docs/roadmap.md) / [`docs/vision.md`](docs/vision.md) / [`docs/architecture.md`](docs/architecture.md)
-
----
-
-## 自己改善ループ
-
-初回ドラフトが目標スコアに届かない場合、`refinement_loop` が
-**採点 → 最大回復幅の弱点セクションを特定 → Claude で書き直し → 再採点**を、
-既改善セクションをスキップしながら反復する：
-
-```text
-BEFORE: 29/100  (weak: section_1_1, section_4_2, section_1_2, ...)
-  iter 0: 29 → 52   refined: section_1_1   reason: 自社固有データ; 課題→施策対応
-  iter 1: 52 → 56   refined: section_4_2   reason: 課題→施策対応
-  iter 2: 56 → 58   refined: section_3     reason: 自社固有データ
-  ...
-AFTER:  66/100  (passed=True)
-```
-
-採点軸は `adoption_estimator` の 6 軸（自社固有データ／課題→施策対応／加点項目活用／具体数値密度／文字数達成／図表配置）。
-リファインメント履歴は `manifest.json` に保存され、`skill_store` に学習対象として記録される。
-
----
-
-## skill_store — フィードバックで重みが動く層
-
-`tools/skill_store.py` がローカル FS の `.skill_store/` に JSONL で蓄積する：
-
-| 蓄積物 | 中身 | スコア更新 |
-|---|---|---|
-| `ExecutionLog` | 全エージェント実行ログ（入出力ハッシュ・所要時間・使ったスキル） | — |
-| `SkillEntry` | 抽出された know-how（プロンプトパターン・業種別例・採択ルーブリック） | フィードバックで ±0.10 |
-| `FeedbackInput` | 採択／不採択結果＋審査員コメント | スコア更新の駆動 |
-| `knowledge/*.json` | 業種別・補助金別の自由形式ナレッジ（AdoptionResearcher 書き込み） | 上書き |
-
-採択フィードバックが入るたび該当 skill のスコアが上がり、次回の検索で優先される
-（0.60→0.70→0.60 の上下動作は、2026-05-22 まで `test_skill_store_learns_from_feedback` で確かめていた。このテストは現在のリポにない）。
-
----
-
-## 構成要素
+## フォルダ構成
 
 ```
 subsidy-brain/
-├── agents/
-│   ├── orchestrator.py            # #4 全体統括
-│   ├── profile_synthesizer.py     # 補助金名→SubsidyProfile（Web調査経由）
-│   ├── template_synthesizer.py    # 公式docx取得 or DRAFT合成
-│   ├── subsidy_discoverer.py      # 補助金名→URL/様式URLをWeb発見
-│   ├── adoption_researcher.py     # 採択事例のWeb調査→skill_store蓄積
-│   ├── guideline_fetcher.py       # 公募要領・様式の自動DL＋キャッシュ
-│   ├── guideline_parser.py        # #5 公募要領PDF→不変条件JSON
-│   ├── financial_reader.py        # #6 決算書読込
-│   ├── expense_calc.py            # #7 経費計算
-│   ├── story_builder.py           # #8 ストーリー構築（Claude）
-│   ├── fact_checker.py            # #12 統計データ裏付け検証
-│   ├── quality_check.py           # #14 採択パターン照合・自己採点
-│   └── bonus_evaluator.py         # 加点項目の適用判定
-├── tools/
-│   ├── web_search.py              # Anthropic優先 / Perplexity fallback の統一層
-│   ├── claude_client.py           # Claude API（prompt caching・tool_use・usage tracking）
-│   ├── profile_cache.py           # SubsidyProfileのディスクキャッシュ
-│   ├── skill_store.py             # 自己改善層（JSONL）
-│   ├── document_assembler.py      # profile駆動の組立（DRAFT用）
-│   ├── official_form_filler.py    # 公式docxを見出しマッチで埋める
-│   ├── template_filler.py         # {{placeholder}}置換式（合成テンプレ向け）
-│   ├── xlsx_filler.py             # フォーマット保持xlsx充填
-│   ├── refinement_loop.py         # 自己改善ループ
-│   ├── adoption_estimator.py      # 6軸の自己採点（採択の予測ではない）
-│   ├── length_validator.py        # min/target/max compliance
-│   ├── docx_structure_reader.py   # 様式 docx の見出し構造を読む
-│   ├── cost_tracker.py            # Claude使用token/料金集計
-│   ├── observability.py           # structlogベース構造化ログ
-│   ├── chart_tools.py             # matplotlib図表生成
-│   └── perplexity_search.py
-├── schemas/                       # 15個のPydanticスキーマ + Protocol宣言
-│   ├── subsidy_profile.py         # SubsidyProfile / SectionSpec / ChartSpec / TableSpec
-│   ├── subsidy_registry.py        # SubsidyProgram / SubsidyForm
-│   └── integrations.py            # Phase 2/3 の Protocol
-├── config/
-├── demo/
-│   ├── run_natural_demo.py        # 唯一の正規エントリー（NL→docx）
-│   ├── verify_output.py           # 生成 docx のセル内挿入回帰チェック
-│   ├── story_builder_live.py      # Claude tool_use ヘルパー
-│   ├── mock_story.py              # オフライン用 deterministic mock
-│   └── sample_company.yaml        # 架空applicant company data
-├── presets/                       # 空（オプショナルの上書き層）
-├── templates/                     # 空（runtime生成 or 公式docx置き場）
-└── tests/                         # 23 tests
+├── agents/     # 探す・読む・書く・確かめる各段階の処理
+├── tools/      # 様式への記入、自己採点、書き直し、Web 検索、記録など
+├── schemas/    # Pydantic のデータ定義
+├── config/     # 設定とログ
+├── demo/       # 実行用のスクリプトと架空の事業者データ
+├── docs/       # 設計の説明（architecture.md）
+├── presets/    # 空（必要なときだけ、補助金ごとの設定を置く）
+├── templates/  # 空（取得した様式や下書きのひな形が実行時に入る）
+└── tests/      # テスト（23件）
 ```
 
----
+## テスト
 
-## Appendix A: 公式参考様式 セル内挿入 実装ログ
+`uv run pytest -ra` で23件のテストが動きます。CI（GitHub Actions）では、lint（ruff）・テスト・オフラインの実行を確かめています。
 
-> **位置付け**：この付録は「公式 様式 docx を壊さずに本文をセル内に入れる」
-> 配管の作業ログ。難所の配管は通った。
-> **次の可変ノブは本文品質**——文字数充足率と adoption_estimator の自社固有データ軸（25 点）
-> を押し上げるのがいま手をつけているところ。
-
-一部の補助金は、公募元が配布する **参考様式 docx** の指定セル内に
-本文を埋めて提出する想定で作られている。素朴な「見出しの直後に段落として
-挿入」では、本文はセル外に浮き、セル内には公募元のプレースホルダ指示文が
-そのまま残ってしまう。直近の作業で踏んだ 4 つの失敗モードと対応：
-
-### ① 「参考様式」と「記載項目」の判別
-
-`run_natural_demo.py` は、ローカル／DL してきた docx が提出用 様式
-（参考様式配布型）か 記載項目チェックリスト（電子申請の入力ガイド）かを
-分類する。後者を様式と誤認すると指示文の合間に生成テキストが挟まり、
-ほぼ空に見える出力になる。
-
-### ② leaf 見出しの抽出
-
-`docx_structure_reader` で各見出しを `leaf` / `container` / `section` に分類。
-`（XXX字以内）` の付いた末端を leaf として確定し、`target/min/max_chars`
-を公募元の数値からそのまま引く（推定しない）。
-
-### ③ セル内挿入
-
-`OfficialFormFiller` は各 leaf 見出しから lxml で `<w:tbl>` を前方探索し、
-入力セルを構造ごとに識別して**セル内に**書き込む：
-
-| セル構造 | 認識ロジック | 挿入先 |
+| ファイル | 件数 | 確かめること |
 |---|---|---|
-| rows=1（placeholder セル） | プレースホルダ文を保持する単一セル | そのセルの中身を置換 |
-| rows≥2（指示行＋入力行） | 1 行目は指示ヘッダ | 最終行の先頭セルに挿入（指示は保持） |
-| 見出し後に表が無い場合 | レガシー fallback | 段落として挿入 |
-
-参考様式 docx で **全 leaf がセル内に配置**されることを
-`demo/verify_output.py` が回帰チェック（実測例：15/15 leaf）。
-
-### ④ 段落分割
-
-Claude 生成本文は `\n\n` 区切りを含むが、素朴な実装はそれを一個の `<w:t>`
-にまとめてしまい、Word では「壁のような連続テキスト」になる。
-`OfficialFormFiller` と `document_assembler` の両経路で、blank-line を境に
-個別の `<w:p>` に分割（段落内改行は `<w:br/>`）。`StoryBuilder` 側でも
-「200〜400字ごとに段落、空行で区切り、【】■①② で構造化、markdown 構文不可」を
-プロンプトに明記している。
-
-### 検証結果（参考様式配布型 サンプル）
-
-- 公式様式の **176 段落 / 28 テーブルがバイト同一で残存**
-- docx サイズ **92 KB（assembler skeleton 時代）→ 187 KB（公式 様式 を保持）**
-- `今回の事業実施の背景` セル：**7 段落**、アクションセル：**10 段落・各先頭に【施策①】〜**
-
-該当コミット：`818dc5b → 10a4303 → b8d63cd → 6c4d69e`
+| `test_natural_pipeline.py` | 10 | 公募要領の整理、キャッシュ、名前から下書きまでの一連の流れ、補助金ごとに違う構成になること |
+| `test_bonus_items.py` | 6 | 補助金ごとの加点項目と、その判定・記載 |
+| `test_official_form_filler.py` | 3 | 様式の全部の欄が埋まること、元の文言が残ること、見出しの表記ゆれへの対応 |
+| `test_operations.py` | 4 | API キーがないときの動き、費用の集計、3つの補助金の並行処理、ログ |
 
 ---
 
-## Appendix B: テストと検証
+## English summary
 
-```
-$ uv run pytest -ra
-============================= test session starts ==============================
-collected 23 items
+subsidy-brain is a prototype (May 2026) that drafts a Japanese SME grant application from a single line: the name of the grant. It looks up the call guidelines, works out the required sections and character limits, drafts each section with Claude, fills the official Word/Excel form without breaking its formatting, then self-scores the draft and rewrites the weakest sections. It ships with fictional company data only. Without an API key it runs end to end with a fixed mock; `--live` uses Claude and web search. The self-score is a heuristic, not a prediction of selection. Not updated since May 2026.
 
-tests/test_bonus_items.py ......                                         [ 26%]
-tests/test_natural_pipeline.py ..........                                [ 69%]
-tests/test_official_form_filler.py ...                                   [ 82%]
-tests/test_operations.py ....                                            [100%]
+## ライセンス
 
-======================== 23 passed ==========================
-```
-
-| テストファイル | 件数 | 主な検証対象 |
-|---|---|---|
-| `test_natural_pipeline.py` | 10 | profile 合成・キャッシュ TTL・自然言語からの end-to-end・3 種の異なる補助金で異なる program_id を生成 |
-| `test_bonus_items.py` | 6 | 補助金家族ごとに異なる加点項目／BonusEvaluator の適用判定／加点ブロックの docx 描画 |
-| `test_official_form_filler.py` | 3 | 全 leaf セクションが埋まる／元テンプレ文が保持される／見出しの表記揺れ吸収 |
-| `test_operations.py` | 4 | web_search の no-key fallback／cost_tracker 集計／3 補助金の並行処理／構造化ログ |
-
-### 補助検証スクリプト
-
-- **`demo/verify_output.py`** — 生成 docx を走査し、各 leaf 見出しの本文がセル**内**に
-  配置されているかを確認。参考様式 docx で **全 leaf**（実測例：15/15）が正しく配置されていることを実測（測った docx はリポに含まれない）。
-- `test_xlsx_filler_does_not_touch_non_text_parts` と `test_skill_store_learns_from_feedback` は、
-  2026-05-22 の整理（c1f1a80）で外した。現在の 23 本には含まれない。
-
----
-
-## 開発体制とライセンス
-
-- **開発**：池田計画合同会社・池田哲郎。Claude Code とのステップバイステップ協働
-- **BootCamp 期間中の到達目標**（2026年5月時点）：**Phase 3 まで一気通貫で動かす**。
-  - **Phase 1**：本文品質を adoption_estimator 85/100 に到達させ、複数業種での再現性を確認
-  - **Phase 2**：資金調達計画作成・資金繰り予測の自動化（freee 連携での月次資金繰り予測）
-  - **Phase 3**：会社情報・経理・KPI を取り込み続け、月次で予算と実績を突き合わせ、打ち手を提案し、翌月に自分の提案的中率を採点して次に活かす **CFO エージェントの自己改善ループ** を実運用に乗せる
-- **ライセンス**：MIT（[LICENSE](LICENSE)）
-- **連絡先**：plan@ikedakeikaku.jp
+MIT（[LICENSE](LICENSE)）

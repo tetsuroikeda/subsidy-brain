@@ -21,7 +21,7 @@ Section regeneration mode is pluggable:
                  signal needs to be strengthened. Production path.
 
 The returned history records every iteration, the score progression, and
-the section that was modified — useful for the BootCamp evaluator and for
+the section that was modified — useful for reviewing a run and for
 the skill store to learn which refinement strategies work.
 """
 from __future__ import annotations

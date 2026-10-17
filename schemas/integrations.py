@@ -5,9 +5,7 @@ reader, freee MCP connector, monthly P/L watcher, drive sync) can implement
 without changing the agent layer. They live here so the public build shows
 **the seams** that the private build will fill in.
 
-Why now: the BootCamp submission demonstrates that the codebase has been
-architected for the company-brain trajectory from day one — Phase 2 (CFO) and
-Phase 3 (data integration) are not bolted-on later, they are pre-declared.
+They are declarations only; nothing in this repository implements them yet.
 """
 from __future__ import annotations
 
