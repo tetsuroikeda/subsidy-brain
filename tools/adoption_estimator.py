@@ -11,8 +11,9 @@ correlate with subsidy adoption in the Japanese SMB market:
   * 文字数達成度            — profile の min/target/max への適合
   * 図表配置                — profile が要求するグラフ・表の充足
 
-Output is a 0-100 score interpreted as an estimated adoption probability
-(loosely calibrated against an internal corpus of public adoption results).
+Output is a 0-100 heuristic self-score (weights loosely informed by public
+adoption results). It is a drafting aid, not a prediction of whether the
+application will be selected.
 A breakdown shows where points were gained / lost so the refinement loop
 knows which section to strengthen next.
 """
@@ -271,7 +272,7 @@ def estimate_adoption_probability(
 def format_estimate_block(report: dict) -> str:
     """Render the adoption estimate as a paragraph block for the docx."""
     lines = [
-        f"採択確率（推定）: {report['total']} / 100  "
+        f"自己採点: {report['total']} / 100  "
         f"（目標 {report['target']} 点）— "
         f"{'達成' if report['passed'] else '未達'}",
     ]
